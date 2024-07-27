@@ -1,0 +1,91 @@
+<!-- schedule.component.html -->
+
+<div>
+    <button (click)="createNewStay()">Create New Stay</button>
+    <button (click)="stays.reset()">Reset Changes</button>
+    <button (click)="stays.commit()">Commit Changes</button>
+  </div>
+  <svg width="2000" height="1000">
+    <defs>
+      <style>
+        .regular {
+          stroke: black;
+          stroke-width: 2;
+          fill: blue;
+          opacity: 0.7;
+        }
+        
+        .conflicted {
+          fill: red;
+          opacity: 0.7;
+        }
+        
+        .new {
+          fill: green;
+          opacity: 0.7;
+        }
+        
+        .changed {
+          fill: yellow;
+          opacity: 0.7;
+        }
+        
+        .deleted {
+          fill: gray;
+          opacity: 0.5;
+          text-decoration: line-through;
+        }
+
+        .selected {
+          fill: yellow;
+          opacity: 0.7;
+          stroke: black;
+          stroke-width: 10;
+        }
+
+        .dragging {
+          stroke-dasharray:  50, 30 ;
+          stroke-width: 10;
+          stroke: orange;
+        }
+          
+          .axis {
+            font-size: 18px;
+          }
+
+          .etd {
+            stroke: black;
+            stroke-width: 0.5;
+            fill: white;
+            font-family: sans-serif;
+          }
+
+          .sizing {
+            fill: green
+          }
+
+          .label {
+            stroke: black;
+            stroke-width: 0.5;
+            fill: white;
+            font-family: sans-serif;
+          }
+
+          .touched { 
+            stroke: red;
+          }
+
+          .y.grid { 
+            stroke: lightgrey;
+            stroke-dasharray: 5,5;
+          }
+
+          .x.grid { 
+            stroke: lightgrey;
+            stroke-dasharray: 1,1;
+            stroke-opacity: 0.5;
+            shape-rendering: crispEdges;
+          }
+      </style>
+    </defs>
+  </svg>
