@@ -35,12 +35,25 @@ export class StayService {
 
   // Load data from the mock file or API endpoint into the working buffer
   private loadStays(from?: Date, to?: Date): Observable<Stay[]> {
+
+
+    const pad = (date: Date, pad: number): Date => {
+      if (date) {
+        const t = (new Date(date)).getTime();
+        const t0 = Math.floor(t / pad) * pad;
+        return new Date(t0);
+      } else {
+        return new Date();
+      }
+    }
+
     const parse = (stay: any): Stay => {
       const { etb, etd, atb, atd } = stay.schedule;
-      stay.schedule.etb = new Date(etb);
-      stay.schedule.etd = new Date(etd);
-      if (atb) stay.schedule.atb = atb ? new Date(atb) : null;
-      if (atd) stay.schedule.atd = atd ? new Date(atd) : null;
+      stay.schedule.etb = pad(etb, 2*21600000);
+      stay.schedule.etd = pad(etd, 2*21600000);
+
+      // if (atb) stay.schedule.atb = (padatb ? new Date(atb) : null;
+      // if (atd) stay.schedule.atd = atd ? new Date(atd) : null;
       stay.changed = false;
 
       return stay;
