@@ -8,47 +8,54 @@
   <svg width="2000" height="1000">
     <defs>
       <style>
-        .regular {
-          stroke: black;
-          stroke-width: 2;
-          fill: blue;
-          opacity: 0.7;
-        }
-        
-        .conflicted {
-          fill: red;
-          opacity: 0.7;
-        }
-        
-        .new {
-          fill: green;
-          opacity: 0.7;
-        }
-        
-        .changed {
-          fill: yellow;
-          opacity: 0.7;
-        }
-        
-        .deleted {
-          fill: gray;
+        /* Normal state */
+        .stay > rect {
           opacity: 0.5;
-          text-decoration: line-through;
-        }
 
-        .selected {
-          fill: yellow;
-          opacity: 0.7;
+          ry: 5px;
+          rx: 5px;
+        }
+        
+        .stay {
+          fill: darkblue;
           stroke: black;
-          stroke-width: 10;
+          stroke-width: 1px;
         }
-
-        .dragging {
-          stroke-dasharray:  50, 30 ;
-          stroke-width: 10;
+        
+        /* Dragging state */
+        .stay.dragging {
+          fill: lightgreen;
+          stroke: darkgreen;
+          stroke-width: 2px;
+        }
+        
+        /* Selected state */
+        .stay.selected {
+          fill: yellow;
           stroke: orange;
+          stroke-width: 2px;
         }
-          
+        
+        /* Changed state */
+        .stay.touched {
+          stroke: darkred;
+          stroke-width: 5px;
+        }
+        
+        /* Fixed state */
+        .stay.fixed {
+          fill: gray;
+          stroke: darkgray;
+          stroke-width: 2px;
+          cursor: not-allowed;
+        }
+        
+        /* Overlap state (attention) */
+        .stay.overlap {
+          fill: red;
+          stroke: darkred;
+          stroke-width: 2px;
+        }
           .axis {
             font-size: 18px;
           }

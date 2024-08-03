@@ -25,6 +25,8 @@ export interface Schedule {
 
     status?: 'new' | 'changed' | 'deleted' | 'selected'; // Status of the stay
 
+    changed?: boolean;   // True if the stay has been changed
+
     vessel: Vessel;     // Information about the vessel - Unchangable
     docking: Docking;   // Docking information
     schedule: Schedule; // The scheduled and actual times

@@ -3,6 +3,20 @@ import { Component, OnInit } from '@angular/core';
 import { Stay } from '../../models/stay';
 import * as d3 from 'd3';
 
+//////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////
+const translationOf = (el: Element): [number, number] => {
+  const d = d3.select(el)
+              .attr('transform')
+              .match(/translate\(([^)]+)\)/);
+
+  return d ? (d[1].split(',').map(Number) as [number, number]) : [0, 0];
+}
+
+const snap = (n: number, m: number): number => Math.round(n/m)*m;
+
+//////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////
 
 @Component({
   selector: 'app-stay-view',
@@ -18,8 +32,13 @@ export class StayViewComponent implements OnInit {
     450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000
    ];
 
-  private qx: number = 1; // quantum x
-  private qy: number = 1; // quantum y
+  private rh: number = 15;  // handle size
+  
+  private tx: number = 0; // translate x
+  private ty: number = 0;
+  
+  private sx: number = 1; // scale x
+  private sy: number = 1;
 
   private gx: number = 1; // grid x
   private gy: number = 1;
@@ -42,7 +61,6 @@ export class StayViewComponent implements OnInit {
         bFirst = false;
         this.redraw(stays);
       }
-
     });
   }
 
@@ -67,10 +85,12 @@ export class StayViewComponent implements OnInit {
 
     this.root = this.svg
       .append('g')
-      .attr('class', 'stays')
-      .attr('clip-path', `url(#clip-path)`);
+      .attr('class', 'plot')
+      .attr('clip-path', `url(#clip-path)`)
+        .append('g')
+        .attr('class', 'stays')
 
-	// Define scales
+	  // Define scales
     this.xScale = d3.scaleTime()
       .domain([
         d3.min( stays.map( d => new Date(d.schedule.etb) ) )!,
@@ -82,7 +102,7 @@ export class StayViewComponent implements OnInit {
       .domain([ 0, 1000 ])
       .range([ height, 0 ]);
 
-	// Define axes
+	  // Define axes
     const xAxis = this.svg.append('g')
       .attr('class', 'x axis')
       .attr('transform', `translate(0,${height})`)
@@ -127,73 +147,62 @@ export class StayViewComponent implements OnInit {
         .attr('r', 5)
         .style('fill', 'black');
 
-
       yAxis.call(d3.axisLeft(yScale).ticks(20));
-
       yGrid.call(d3.axisLeft(yScale)
         .ticks(10)
         .tickSize(-width)
         .tickFormat(() => ''));
     }
 
+    // Rescale axes
     rescaleYAxis(this.yScale); 
     rescaleXAxis(this.xScale);
-
 
     // Define zoom behavior
     const xZoom = d3.zoom()
         .scaleExtent([0.5, 5])
         .translateExtent([[0, 0], [width, height]])
         .on('zoom', (event) => {
-            const newXScale = event.transform.rescaleX(this.xScale);
-            rescaleXAxis(newXScale);
-            // this.root.selectAll('rect,text')
-            //     .attr('x', (d:any) => newXScale(d.schedule.etb))
-            //     .attr('width', (d:any) => newXScale(d.schedule.etd) - newXScale(d.schedule.etb));
+            const t = event.transform;
+            if ( event.sourceEvent?.shiftKey ) {
+              this.sy = t.k;
+              this.ty = t.y;
+              rescaleYAxis(t.rescaleY(this.yScale));              
+            } else {
+              this.sx = t.k;
+              this.tx = t.x;
+              rescaleXAxis(t.rescaleX(this.xScale));
+            }
 
-            // this.root.selectAll('circle.etd')
-            //     .attr('cx', (d:any) => newXScale(d.schedule.etd));
+            // Pan/Zoom Stay elements
+            this.root.attr('transform', `translate(${this.tx},${this.ty}) scale(${this.sx},${this.sy})`);
 
-        });
+            // Scale back labels            
+            this.root.selectAll('.label').attr('transform', `scale(${1/this.sx},${1/this.sy})`);
 
-    const yZoom = d3.zoom()
-        .scaleExtent([1, 10])
-        .translateExtent([[0, 0], [width, height]])
-        .on('zoom', (event) => {
-            const newYScale = event.transform.rescaleY(this.yScale);
-            rescaleYAxis(newYScale);
-            // this.root.selectAll('rect,text')
-            //     .attr('y', (d:Stay) => newYScale(d.docking.pos))
-            //     .attr('height', (d:Stay) => newYScale(0) - newYScale(d.vessel.len));
+            // Scale back handle
+            this.root.selectAll('.etd').attr('rx', this.rh/this.sx);
+            this.root.selectAll('.etd').attr('ry', this.rh/this.sy);
 
-            // this.root.selectAll('circle.etd')
-            //     .attr('cy', (d:Stay) => newYScale(d.docking.pos) + (newYScale(0) - newYScale(d.vessel.len))/2);
+            // Scale back stroke width
+            const w = 1.0 / Math.hypot(this.sx, this.sy);
+            this.root.selectAll('rect').attr('stroke-width', w);
         });
 
     svg.call(xZoom.bind(this));
 
     d3.select(window)
       .on('keydown', (event: KeyboardEvent) => {
-        if (event.key === 'Shift') {
-          svg.call(yZoom.bind(this));
-        }
-
         if (event.key === 'Delete' || event.key === 'Backspace') {
           this.root.selectAll('.selected').classed('selected', false).remove();
         }
       })
-      .on('keyup', (event: KeyboardEvent) => {
-        if (event.key === 'Shift') {
-          svg.call(xZoom.bind(this));
-        }
-      });
   }
+
 
   //////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////
   private redraw(stays: Stay[]): void {
-    const snap = (n: number, m: number): number => Math.round(n/m)*m;
-
     let dx: number, dy: number;
     let cx: number;
 
@@ -219,18 +228,19 @@ export class StayViewComponent implements OnInit {
         .on('start', function(this: Element, event: any): void {
             d3.select(this)
               .classed('dragging', true)
-              .classed('touched', true)
+              .classed('touched', true);
 
-            const delta = d3.select(this).attr('transform')
-                            .match(/translate\(([^)]+)\)/);
-            
-            [dx, dy] = delta ? delta[1].split(',').map(Number) : [0, 0];
+            [dx, dy] = translationOf(this);
         })
         .on('drag', function(this: Element, event: any): void {
             dx += event.dx;
             dy += event.dy;
-            d3.select(this).attr('transform', `translate(${snap(dx,that.gx)},${snap(dy,that.gy)})`);
-        })
+
+            const x = snap(dx,that.gx);
+            const y = snap(dy,that.gy);
+
+            that.process( d3.select(this).attr('transform', `translate(${x},${y})`), x, y );      
+       })
         .on('end', function(this: Element): void {
             d3.select(this).classed('dragging', false);
         })
@@ -238,9 +248,9 @@ export class StayViewComponent implements OnInit {
 
       
     items.append('rect')
-      .attr('width', (d:Stay) => this.xScale(d.schedule.etd) - this.xScale(d.schedule.etb))
-      .attr('height', (d:Stay) => this.yScale(0) - this.yScale(d.vessel.len))
-      .attr('cursor', 'move');
+        .attr('width', (d:Stay) => this.xScale(d.schedule.etd) - this.xScale(d.schedule.etb))
+        .attr('height', (d:Stay) => this.yScale(0) - this.yScale(d.vessel.len))
+        .attr('cursor', 'move');
       
     items.append('path')
         .attr('d', 'M 0.7,0.6 Q 0.5,0, 0.3,0.6 v .5 h 0.4 v -0.5 z')
@@ -261,11 +271,12 @@ export class StayViewComponent implements OnInit {
           .attr('dx', '0.5em')
           .attr('dy', (d: string, i: number) => `${1.5*i+1.3}em`);
 
-    items.append('circle')
+    items.append('ellipse')
         .attr('class', 'etd')
         .attr('cx', (d:Stay) => this.xScale(d.schedule.etd) - this.xScale(d.schedule.etb))
         .attr('cy', (d:Stay) => (this.yScale(0) - this.yScale(d.vessel.len))/2)
-        .attr('r', 15)
+        .attr('rx', this.rh)
+        .attr('ry', this.rh)
         .attr('cursor', 'ew-resize')
         .call(d3.drag()
         .on('start', function(this: Element, event: any): void {
@@ -275,14 +286,16 @@ export class StayViewComponent implements OnInit {
         })
         .on('drag', function(this: Element, event: any): void {
             const dot = d3.select(this);
-            const dad = (dot.node()?.parentNode)!;
-            const box = d3.select(dad as Element).select('rect');
+            const dad = (dot.node()?.parentNode)! as Element;
+            const box = d3.select(dad).select('rect');
 
             const dw = +box.attr('width') - +dot.attr('cx');
+            const w0 = snap(event.x - cx, that.gx); 
 
-            d3.select(dad as Element).classed('touched', true);
-            box.attr('width', snap(event.x - cx, that.gx) + dw);
-            dot.attr('cx', snap(event.x - cx, that.gx));
+            box.attr('width', w0+dw);
+            dot.attr('cx', w0);
+
+            that.process( d3.select(dad), dx, dy );  
         })
         .on('end', function(this: Element): void {
             d3.select(this).classed('sizing', false);
@@ -292,53 +305,73 @@ export class StayViewComponent implements OnInit {
 
   //////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////
-  private validPosition(el: Element, x: number, y: number): boolean {
-    const rect = d3.select(el).select('rect');
-    const w = +rect.attr('width');
-    const h = +rect.attr('height');
-
-    const x1 = x;
-    const x2 = x + w;
-    const y1 = y;
-    const y2 = y + h;
-
-    const items = this.root.selectAll('g.stay').nodes();
-    for (let i = 0; i < items.length; i++) {
-      const item = d3.select(items[i]);
-      if ( item.node() === el ) continue;
-
-      const box = item.select('rect');
-      const bx1 = +box.attr('x');
-      const bx2 = +box.attr('x') + +box.attr('width');
-      const by1 = +box.attr('y');
-      const by2 = +box.attr('y') + +box.attr('height');
-
-      if ( x1 < bx2 && x2 > bx1 && y1 < by2 && y2 > by1 ) {
-        return false;
-      }
-    }
-
-    return true
-  }
-
-  //////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////
   private getClass(d: Stay): string {
     return d.status || 'regular';
   }
 
+  //////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////
   private labelOf(d: Stay): string {
     const pos = d.docking.pos;
     const { etb, etd } = d.schedule;
     const fmt = (d: Date) => d3.timeFormat('%H:%M %d/%m')(d);
     const labels = [
-      `${d.vessel.vessel_name} (${d.vessel.len}m) @ ${pos}m`,
+      `${d.vessel.vessel_name} (${d.vessel.len}m) @ ${Math.round(pos)}m`,
       `ETB: ${fmt(etb)} - ETD: ${fmt(etd)}`
     ];
     
     return labels.join('\n');
   }
 
+  //////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////
+  private process(el: any, dx: number, dy: number ): void {
+    const x = snap(dx,this.gx);
+    const y = snap(dy,this.gy);
+    const w = +el.select('rect').attr('width');
+    const d = structuredClone(el.datum()) as Stay;
+    
+    d.schedule.etb = new Date(this.xScale.invert(x));
+    d.schedule.etd = new Date(this.xScale.invert(x+w));
+    d.docking.pos = this.yScale.invert(y);
+    d.changed = true;
+    
+
+
+    const check = (a: any, b: any): boolean => {
+      const [ax, ay] = translationOf(a);
+      const [bx, by] = translationOf(b);
+    
+      const aw = +d3.select(a).select('rect').attr('width');
+      const ah = +d3.select(a).select('rect').attr('height');
+      const bw = +d3.select(b).select('rect').attr('width');
+      const bh = +d3.select(b).select('rect').attr('height');
+    
+      return (ax < bx + bw && ax + aw > bx &&
+              ay < by + bh && ay + ah > by);
+    }
+    
+
+    let overlap = false;
+    this.root.selectAll('g.stay')
+    .filter(function(this: Element) {
+      return this !== el.node();
+    })
+    .each(function(this: Element) {
+      const o = check(this, el.node());
+      overlap ||= o;
+
+      d3.select(this)
+        .classed('overlap', o);
+    });
+
+    el.classed('overlap', overlap)
+      .classed('touched', true)
+      .selectAll('text')
+      .data(this.labelOf(d).split('\n'))
+      .text((d: string) => d);
+  }
+  
   //////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////
   createNewStay(): void {
