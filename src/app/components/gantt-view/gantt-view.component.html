@@ -1,0 +1,103 @@
+<!-- schedule.component.html -->
+
+<div>
+    <button (click)="createNewStay()">Create New Stay</button>
+    <button (click)="stays.reset()">Reset Changes</button>
+    <button (click)="stays.commit()">Commit Changes</button>
+  </div>
+  <svg width="2000" height="1000">
+    <defs>
+      <style>
+        /* Normal state */
+        .stay > rect {
+          opacity: 0.5;
+        }
+        
+        .stay {
+          fill: darkblue;
+          stroke: black;
+          stroke-width: 1px;
+        }
+        
+        /* Dragging state */
+        .stay.dragging {
+          fill: lightgreen;
+          stroke: darkgreen;
+          stroke-width: 2px;
+        }
+        
+        /* Selected state */
+        .stay.selected {
+          fill: yellow;
+          stroke: orange;
+          stroke-width: 2px;
+        }
+        
+        /* Changed state */
+        .stay.touched {
+          stroke: darkred;
+          stroke-width: 5px;
+        }
+        
+        /* Fixed state */
+        .stay.fixed {
+          fill: gray;
+          stroke: darkgray;
+          stroke-width: 2px;
+          cursor: not-allowed;
+        }
+        
+        /* Overlap state (attention) */
+        .stay.overlap {
+          fill: red;
+          stroke: darkred;
+          stroke-width: 2px;
+        }
+          .axis {
+            font-size: 18px;
+          }
+
+          .etd {
+            stroke: black;
+            stroke-width: 0.5;
+            fill: white;
+            font-family: sans-serif;
+          }
+
+          .sizing {
+            fill: green
+          }
+
+          .label {
+            stroke: black;
+            stroke-width: 0.5;
+            fill: white;
+            font-family: sans-serif;
+          }
+
+          .touched { 
+            stroke: red;
+          }
+
+          .y.grid { 
+            stroke: lightgrey;
+            stroke-dasharray: 5,5;
+          }
+
+          .x.grid { 
+            stroke: lightgrey;
+            stroke-dasharray: 1,1;
+            stroke-opacity: 0.5;
+            shape-rendering: crispEdges;
+          }
+      </style>
+    </defs>
+  </svg>
+
+  <div class="context-menu" id="context-menu">
+    <ul>
+      <li (click)="edit()">Edit</li>
+      <li (click)="drop()">Drop</li>
+      <li (click)="save()">Save</li>
+    </ul>
+  </div>

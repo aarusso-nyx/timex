@@ -1,16 +1,14 @@
-// stay.service.ts
-
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, of, Subject } from 'rxjs';
 import { map, tap } from 'rxjs/operators';
 
-// import { environment } from '../environments/environment';
 import { Stay } from '../models/stay';
-import { sampleStays } from './stays.sample';
 
 const baseURL = 'http://localhost:3000';
 
+const hours = 60*60*1000;
+const days = 24*hours;
 
 @Injectable({
   providedIn: 'root',
@@ -34,32 +32,37 @@ export class StayService {
 
 
   // Load data from the mock file or API endpoint into the working buffer
-  private loadStays(from?: Date, to?: Date): Observable<Stay[]> {
+  private loadStays(n: number = 10): Observable<Stay[]> {
 
-
-    const pad = (date: Date, pad: number): Date => {
-      if (date) {
-        const t = (new Date(date)).getTime();
-        const t0 = Math.floor(t / pad) * pad;
-        return new Date(t0);
-      } else {
-        return new Date();
+  const randomVessel = (id: number): Stay => {
+      const pad = (n: number, p: number): number => Math.floor(n/p)*p;
+      
+      const randomDate = (from: Date, to: Date): Date => {
+        const t = from.getTime() + Math.random() * (to.getTime() - from.getTime());
+        return new Date(pad(t, 3*hours));
       }
-    }
 
-    const parse = (stay: any): Stay => {
-      const { etb, etd, atb, atd } = stay.schedule;
-      stay.schedule.etb = pad(etb, 2*21600000);
-      stay.schedule.etd = pad(etd, 2*21600000);
+      const now = Date.now();
+      const dt = 3*days;
 
-      // if (atb) stay.schedule.atb = (padatb ? new Date(atb) : null;
-      // if (atd) stay.schedule.atd = atd ? new Date(atd) : null;
-      stay.changed = false;
+      const lpp = pad(Math.floor(100 + Math.random() * 200), 10);
+      const beam = pad(Math.floor(10 + Math.random() * 40), 5);
+      const stern = pad(Math.floor(Math.random() * 1000), 1);
+      const dir = Math.random() > 0.5 ? 1 : -1;
+      
+      const etb = randomDate(new Date(now - dt), new Date(now + dt));
+      const etd = randomDate(etb, new Date(now + dt));
+      
+      const schedule = { etb, etd };
+      const docking = { dir, pos: stern, aft: 10, rear: 10 };
+      const vessel = { vessel_id: id, vessel_name: `Vessel ${id}`, lpp, beam };
+      
+      const stay_id = Math.floor(Math.random() * 1000);
 
-      return stay;
-    }
-    
-    return of(sampleStays).pipe(map(stays => stays.map(parse)));
+      return { stay_id, vessel, docking, schedule };
+    } 
+
+    return of([...Array(n).keys()].map(i => randomVessel(i+1)));
   }
 
   public fetch(): Observable<Stay[]> {
@@ -87,9 +90,9 @@ export class StayService {
         const { etb: etb1, etd: etd1 } = stay1.schedule;
         const { etb: etb2, etd: etd2 } = stay2.schedule;
         const stern1 = stay1.docking.pos;
-        const bow1 = stern1 + stay1.vessel.len;
+        const bow1 = stern1 + stay1.vessel.lpp;
         const stern2 = stay2.docking.pos;
-        const bow2 = stern2 + stay2.vessel.len;
+        const bow2 = stern2 + stay2.vessel.lpp;
     
         const timeOverlap = etb1 <= etd2 && etd1 >= etb2;
         const positionOverlap = stern1 <= bow2 && bow1 >= stern2;
@@ -118,7 +121,7 @@ export class StayService {
 
   // Add a new stay to the buffer
   public create(stay: Stay): void {
-    this.stash.push({ ...stay, status: 'new' });
+    this.stash.push(stay);
     this.update();
   }
 
@@ -126,7 +129,7 @@ export class StayService {
   public change(stay: Stay): void {
     const index = this.stash.findIndex(s => s === stay);
     if (index >= 0) {
-      this.stash[index] = { ...stay, status: 'changed' };
+      this.stash[index] = stay;
       this.update();
     }
   }
@@ -135,7 +138,7 @@ export class StayService {
   public remove(stay: Stay): void {
     const index = this.stash.findIndex(s => s === stay);
     if (index >= 0) {
-      this.stash[index] = { ...stay, status: 'deleted' };
+      this.stash[index] = stay;
       this.update();
     }
   }

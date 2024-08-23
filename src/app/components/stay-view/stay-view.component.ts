@@ -1,19 +1,13 @@
-import { StayService } from '../../services/stay.service';
-import { Component, OnInit } from '@angular/core';
-import { Stay } from '../../models/stay';
+import { Component, AfterViewInit } from '@angular/core';
+import { CommonModule, DatePipe } from '@angular/common';
+
 import * as d3 from 'd3';
 
-//////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////
-const translationOf = (el: Element): [number, number] => {
-  const d = d3.select(el)
-              .attr('transform')
-              .match(/translate\(([^)]+)\)/);
-
-  return d ? (d[1].split(',').map(Number) as [number, number]) : [0, 0];
-}
-
-const snap = (n: number, m: number): number => Math.round(n/m)*m;
+import { Stay, ScaleLinear, ScaleTime } from '../../models/stay';
+import { StayService } from '../../services/stay.service';
+import { makeHull, labelOf,
+          draggable, clickable, stretchable, 
+          timeslider } from './stay-view.functions';
 
 //////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////
@@ -21,172 +15,237 @@ const snap = (n: number, m: number): number => Math.round(n/m)*m;
 @Component({
   selector: 'app-stay-view',
   standalone: true,
-  imports: [],
+  imports: [CommonModule],
+  providers: [ DatePipe ],
   templateUrl: './stay-view.component.html',
   styleUrl: './stay-view.component.scss'
 })
-export class StayViewComponent implements OnInit {
-  private margin = { top: 20, right: 20, bottom: 40, left: 100 };
+export class StayViewComponent implements AfterViewInit {
+  private margin = { top: 30, right: 30, bottom: 30, left: 90 };
 
-  private bollards = [ 0, 20, 40, 60, 80, 100, 125, 150, 175, 200, 225, 250, 275, 300, 325, 350, 375, 400,
-    450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950, 1000
+  private readonly bollards: number[] = [ 
+    20, 40, 60, 80, 100, 125, 150, 175, 200, 225, 
+    250, 275, 300, 325, 350, 375, 400, 450, 500, 
+    550, 600, 650, 700, 750, 800, 850, 900, 950
    ];
 
-  private rh: number = 15;  // handle size
   
-  private tx: number = 0; // translate x
-  private ty: number = 0;
-  
-  private sx: number = 1; // scale x
-  private sy: number = 1;
-
-  private gx: number = 1; // grid x
-  private gy: number = 1;
-
-  private svg: any;
-  private root: any;
-  
+  //////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////
   private xScale: any;
   private yScale: any;
 
-  constructor(public stays: StayService) {}
+  private plot: any;
+  private pier: any;
 
-  //////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////
-  ngOnInit(): void {
-    let bFirst = true;
-    this.stays.fetch().subscribe(stays => {
-      if ( bFirst ) {
-        this.init(stays);
-        bFirst = false;
-        this.redraw(stays);
-      }
-    });
+  ////////////////////////////////////
+  // Cursor
+  private _now: Date = new Date();
+  public get now(): Date {
+    return this._now;
+  }
+
+  private set now(t: Date) {
+    this._now = t;
+    this.initPier(this.stays, t);
+  }
+
+  ////////////////////////////////////
+  // Stays
+  private _stays: Stay[] = [];
+  private get stays(): Stay[] {
+      return this._stays;
+  }
+
+  private set stays(stays: Stay[]) {
+      this._stays = stays;
+      this.initPlot(stays);
+      this.initPier(stays, this._now);
   }
 
   //////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////
-  private init(stays: Stay[]): void {
-    const svg = d3.select('svg');
-    const width = +svg.attr('width') - this.margin.left - this.margin.right;
-    const height = +svg.attr('height') - this.margin.top - this.margin.bottom;
+  constructor(public api: StayService) {}
 
-    // Define clipPath to constrain drawing area
-    svg.append('defs')
-        .append('clipPath')
-          .attr('id', 'clip-path')
-          .append('rect')
-            .attr('width', width)
-            .attr('height', height);
+  //////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////
+  ngAfterViewInit(): void {
+    this.initDraw();
+
+    this.api.fetch()
+        .subscribe(stays => {
+            this.stays = stays;
+        });
+  }
+
+
+  //////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////
+  private initDraw(): void {
+    const svg = d3.select('#canvas');
+
+    const bbox = (svg.node() as Element).getBoundingClientRect();
+    const w = bbox.width;
+    const h = bbox.height;
+
+    svg.attr('viewBox', `0 0 ${w} ${h}`)
+       .attr('preserveAspectRatio', 'xMidYMid meet');
+
+    const width = w - this.margin.left - this.margin.right;
+    const height = h - this.margin.top - this.margin.bottom;
+
+    const m = 0.15; // margin pier 
+    const k = 0.2;
+
+    const yPier = 0;
+    const hPier = k*height;
+    const yPlot = hPier + this.margin.top;
+    const hPlot = (1-k)*height - this.margin.top;
+
+    //////////////////////////////////////////////////////////////////////
+	  // Define scales
+    this.yScale = d3.scaleTime()
+        .domain([
+          d3.timeDay.offset( new Date(), -4 ),
+          d3.timeDay.offset( new Date(), +4 ),
+        ])
+        .range([ hPlot, 0 ]);
+
+    this.xScale = d3.scaleLinear()
+        .domain([ 0, 1000 ])
+        .range([ 0, width ]);
+
+    let xScale = this.xScale;
+    let yScale = this.yScale;
   
-    this.svg = svg
+    //////////////////////////////////////////////////////////////////////
+    // Define clipPath to constrain drawing area
+    const defs = svg.append('defs');
+
+    defs.append('clipPath')
+        .attr('id', 'clip-path-plot')
+        .append('rect')
+          .attr('width', width)
+          .attr('height', hPlot);
+  
+    defs.append('clipPath')
+        .attr('id', 'clip-path-pier')
+        .append('rect')
+          .attr('width', width)
+          .attr('height', hPier);
+
+    //////////////////////////////////////////////////////////////////////
+    // Define root and pier, plot groups
+    const root = svg
       .append('g')
       .attr('transform', `translate(${this.margin.left},${this.margin.top})`);
 
-    this.root = this.svg
+    this.plot = root
       .append('g')
       .attr('class', 'plot')
-      .attr('clip-path', `url(#clip-path)`)
-        .append('g')
-        .attr('class', 'stays')
+      .attr('transform', `translate(0,${yPlot})`)
+      .attr('clip-path', `url(#clip-path-plot)`);
 
-	  // Define scales
-    this.xScale = d3.scaleTime()
-      .domain([
-        d3.min( stays.map( d => new Date(d.schedule.etb) ) )!,
-        d3.max( stays.map( d => new Date(d.schedule.etd) ) )!
-      ])
-      .range([ 0, width ]);
+    this.pier = root
+      .append('g')
+      .attr('class', 'pier')
+      .attr('transform', `translate(0,${yPier})`)
+      .attr('clip-path', `url(#clip-path-pier)`);
+    
+    this.pier.append('rect')
+        .attr('class', 'hollow')
+        .attr('width', width)
+        .attr('height', hPier);
 
-    this.yScale = d3.scaleLinear()
-      .domain([ 0, 1000 ])
-      .range([ height, 0 ]);
+    this.pier.append('g')
+        .attr('class', 'dock')
+        .attr('transform', `translate(0,${2*m*hPier})`);
 
-	  // Define axes
-    const xAxis = this.svg.append('g')
-      .attr('class', 'x axis')
-      .attr('transform', `translate(0,${height})`)
+    //////////////////////////////////////////////////////////////////////
+    // Define axes
+    const xAxis = [
+      root.append('g')
+          .attr('class', 'x axis')
+          .attr('transform', `translate(0,${m*hPier})`),
       
-    const xGrid = this.svg.append('g')
-      .attr('class', 'x grid')
-      .attr('transform', `translate(0,${height})`)
+      root.append('g')
+          .attr('class', 'x axis')
+          .attr('transform', `translate(0,${(1-m)*hPier})`)
+    ];
 
-    const yAxis = this.svg.append('g')
-      .attr('class', 'y axis')
+    const yAxis = [
+      root.append('g')
+          .attr('class', 'y axis')
+          .attr('transform', `translate(0,${yPlot})`),
+  
+      root.append('g')
+          .attr('class', 'y grid')
+          .attr('transform', `translate(0,${yPlot})`)
+    ];
 
-    const yGrid = this.svg.append('g')
-      .attr('class', 'y grid')
+    //////////////////////////////////////////////////////////////////////
+    // Draw bollards
+    this.pier
+        .append('g')
+        .attr('class', 'boll')
+        .attr('transform', `translate(0,${1.5*m*hPier})`)
+        .selectAll('circle')
+        .data(this.bollards)
+        .enter()
+        .append('circle')
+          .attr('r', 5);
 
-    const yBoll = this.svg.append('g')
-      .attr('class', 'y bollard')
-      .attr('transform', `translate(-66,0)`);
+    //////////////////////////////////////////////////////////////////////
+    // draw horizontal cursor representing this.now;
+    this.plot
+        .append('line')
+        .attr('class', 'cursor')
+        .attr('x1', 0)
+        .attr('x2', width)
+        .attr('y1', this.yScale(this._now))
+        .attr('y2', this.yScale(this._now))
+        .call(timeslider(this, yScale));
 
-    const rescaleXAxis = (xScale: any) => {
-      this.gx = xScale(0) - xScale(0 + 6*60*60*1000); // 6 hours in milliseconds
 
-      xAxis.call(d3.axisBottom(xScale).ticks(20));
-      xGrid.call(d3.axisBottom(xScale).ticks(d3.timeHour.every(6))
-          .tickSize(-height)
+    //////////////////////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////////////////////
+    // Rescale axes
+    const rescaleYAxis = (yScale: any) => {
+      yAxis[0].call(d3.axisLeft(yScale).ticks(12));
+      yAxis[1].call(d3.axisLeft(yScale).ticks(d3.timeHour.every(6))
+          .tickSize(-width)
           .tickFormat(() => ''));
     }
 
-    const rescaleYAxis = (yScale: any) => {
-      this.gy = yScale(0) - yScale(0 + 20); // 10 meters
+    const rescaleXAxis = (xScale: any) => {
+      xAxis[0].call(d3.axisTop(xScale).ticks(20));
+      xAxis[1].call(d3.axisBottom(xScale).ticks(20));
 
-      yBoll.call(d3.axisLeft(yScale)
-          .tickValues(this.bollards)
-          .tickSize(0)
-          .tickPadding(10));
-
-      yBoll.selectAll('.tick line').remove();
-      yBoll.selectAll('.tick text').remove();
-
-      // Add circles at the tick positions
-      yBoll.selectAll('.tick')
-        .append('circle')
-        .attr('r', 5)
-        .style('fill', 'black');
-
-      yAxis.call(d3.axisLeft(yScale).ticks(20));
-      yGrid.call(d3.axisLeft(yScale)
-        .ticks(10)
-        .tickSize(-width)
-        .tickFormat(() => ''));
+      this.pier.selectAll('.boll circle')
+          .attr('cx', (d: number) => xScale(d));
     }
 
-    // Rescale axes
+    // Scale axes
     rescaleYAxis(this.yScale); 
     rescaleXAxis(this.xScale);
 
     // Define zoom behavior
     const xZoom = d3.zoom()
-        .scaleExtent([0.5, 5])
+        .scaleExtent([1, 5])
         .translateExtent([[0, 0], [width, height]])
         .on('zoom', (event) => {
             const t = event.transform;
             if ( event.sourceEvent?.shiftKey ) {
-              this.sy = t.k;
-              this.ty = t.y;
-              rescaleYAxis(t.rescaleY(this.yScale));              
+              xScale = t.rescaleX(this.xScale);
+              rescaleXAxis(xScale);
+              this.drawPier(xScale);
             } else {
-              this.sx = t.k;
-              this.tx = t.x;
-              rescaleXAxis(t.rescaleX(this.xScale));
+              yScale = t.rescaleY(this.yScale);
+              rescaleYAxis(yScale);
+              this.drawLine(yScale);  
             }
-
-            // Pan/Zoom Stay elements
-            this.root.attr('transform', `translate(${this.tx},${this.ty}) scale(${this.sx},${this.sy})`);
-
-            // Scale back labels            
-            this.root.selectAll('.label').attr('transform', `scale(${1/this.sx},${1/this.sy})`);
-
-            // Scale back handle
-            this.root.selectAll('.etd').attr('rx', this.rh/this.sx);
-            this.root.selectAll('.etd').attr('ry', this.rh/this.sy);
-
-            // Scale back stroke width
-            const w = 1.0 / Math.hypot(this.sx, this.sy);
-            this.root.selectAll('rect').attr('stroke-width', w);
+            
+            this.drawPlot(xScale, yScale);           
         });
 
     svg.call(xZoom.bind(this));
@@ -194,203 +253,140 @@ export class StayViewComponent implements OnInit {
     d3.select(window)
       .on('keydown', (event: KeyboardEvent) => {
         if (event.key === 'Delete' || event.key === 'Backspace') {
-          this.root.selectAll('.selected').classed('selected', false).remove();
+          this.plot.selectAll('.selected').classed('selected', false).remove();
         }
-      })
+      });
   }
 
-
   //////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////
-  private redraw(stays: Stay[]): void {
-    let dx: number, dy: number;
-    let cx: number;
-
-    const that = this;
-    this.root
-      .selectAll('g.stay')
-      .remove();
+  private initPlot(stays: Stay[]): void {
+    this.plot
+        .selectAll('g.stay')
+        .remove();
     
-    const items = this.root
-      .selectAll('g.stay')
-      .data(stays)
-      .enter()
-      .append('g')
-      .attr('class', (d:Stay) => this.getClass(d))
-      .classed('stay', true)
-      .attr('id', (d:Stay) => `stay-${d.stay_id}`)
-      .attr('transform', (d:Stay) => `translate(${this.xScale(d.schedule.etb)},${this.yScale(d.docking.pos)})`)
-      .on('click', function(this: Element) { 
-        const el = d3.select(this);
-        el.classed('selected', !el.classed('selected'));
-       })
-      .call(d3.drag()
-        .on('start', function(this: Element, event: any): void {
-            d3.select(this)
-              .classed('dragging', true)
-              .classed('touched', true);
+    const plot = this.plot
+        .selectAll('g.stay')
+        .data(stays)
+        .enter()
+          .append('g')
+          .classed('stay', true)
+          .attr('id', (d:Stay) => `stay-${d.stay_id}`)
+          .on('click', clickable)
+          .call(draggable());
 
-            [dx, dy] = translationOf(this);
-        })
-        .on('drag', function(this: Element, event: any): void {
-            dx += event.dx;
-            dy += event.dy;
-
-            const x = snap(dx,that.gx);
-            const y = snap(dy,that.gy);
-
-            that.process( d3.select(this).attr('transform', `translate(${x},${y})`), x, y );      
-       })
-        .on('end', function(this: Element): void {
-            d3.select(this).classed('dragging', false);
-        })
-      );
-
-      
-    items.append('rect')
-        .attr('width', (d:Stay) => this.xScale(d.schedule.etd) - this.xScale(d.schedule.etb))
-        .attr('height', (d:Stay) => this.yScale(0) - this.yScale(d.vessel.len))
+    plot.append('rect')
         .attr('cursor', 'move');
+
+    plot.append('circle')
+        .attr('class', 'etd')
+        .attr('r', 10)
+        .attr('cursor', 'ns-resize')
+        .call(stretchable());
       
-    items.append('path')
-        .attr('d', 'M 0.7,0.6 Q 0.5,0, 0.3,0.6 v .5 h 0.4 v -0.5 z')
-        .attr('stroke', 'black')
-        .attr('stroke-width', 0.1)
-        .attr('fill', 'black')
-        .attr('opacity', 0.5)
-        .attr('transform', 'scale(30, 100)')
-    
-    items.append('g')
+    plot.append('g')
         .attr('class', 'label')
         .attr('cursor', 'click')
         .selectAll('text')
-        .data((d:Stay) => this.labelOf(d).split('\n'))
+        .data((d:Stay) => labelOf(d).split('\n'))
         .enter()
         .append('text')
           .text((d: string) => d)
           .attr('dx', '0.5em')
           .attr('dy', (d: string, i: number) => `${1.5*i+1.3}em`);
-
-    items.append('ellipse')
-        .attr('class', 'etd')
-        .attr('cx', (d:Stay) => this.xScale(d.schedule.etd) - this.xScale(d.schedule.etb))
-        .attr('cy', (d:Stay) => (this.yScale(0) - this.yScale(d.vessel.len))/2)
-        .attr('rx', this.rh)
-        .attr('ry', this.rh)
-        .attr('cursor', 'ew-resize')
-        .call(d3.drag()
-        .on('start', function(this: Element, event: any): void {
-            const dot = d3.select(this);
-            dot.classed('sizing', true);
-            cx = event.x - +dot.attr('cx');
-        })
-        .on('drag', function(this: Element, event: any): void {
-            const dot = d3.select(this);
-            const dad = (dot.node()?.parentNode)! as Element;
-            const box = d3.select(dad).select('rect');
-
-            const dw = +box.attr('width') - +dot.attr('cx');
-            const w0 = snap(event.x - cx, that.gx); 
-
-            box.attr('width', w0+dw);
-            dot.attr('cx', w0);
-
-            that.process( d3.select(dad), dx, dy );  
-        })
-        .on('end', function(this: Element): void {
-            d3.select(this).classed('sizing', false);
-        })
-      );
-  }
-
-  //////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////
-  private getClass(d: Stay): string {
-    return d.status || 'regular';
-  }
-
-  //////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////
-  private labelOf(d: Stay): string {
-    const pos = d.docking.pos;
-    const { etb, etd } = d.schedule;
-    const fmt = (d: Date) => d3.timeFormat('%H:%M %d/%m')(d);
-    const labels = [
-      `${d.vessel.vessel_name} (${d.vessel.len}m) @ ${Math.round(pos)}m`,
-      `ETB: ${fmt(etb)} - ETD: ${fmt(etd)}`
-    ];
-    
-    return labels.join('\n');
-  }
-
-  //////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////
-  private process(el: any, dx: number, dy: number ): void {
-    const x = snap(dx,this.gx);
-    const y = snap(dy,this.gy);
-    const w = +el.select('rect').attr('width');
-    const d = structuredClone(el.datum()) as Stay;
-    
-    d.schedule.etb = new Date(this.xScale.invert(x));
-    d.schedule.etd = new Date(this.xScale.invert(x+w));
-    d.docking.pos = this.yScale.invert(y);
-    d.changed = true;
-    
-
-
-    const check = (a: any, b: any): boolean => {
-      const [ax, ay] = translationOf(a);
-      const [bx, by] = translationOf(b);
-    
-      const aw = +d3.select(a).select('rect').attr('width');
-      const ah = +d3.select(a).select('rect').attr('height');
-      const bw = +d3.select(b).select('rect').attr('width');
-      const bh = +d3.select(b).select('rect').attr('height');
-    
-      return (ax < bx + bw && ax + aw > bx &&
-              ay < by + bh && ay + ah > by);
-    }
-    
-
-    let overlap = false;
-    this.root.selectAll('g.stay')
-    .filter(function(this: Element) {
-      return this !== el.node();
-    })
-    .each(function(this: Element) {
-      const o = check(this, el.node());
-      overlap ||= o;
-
-      d3.select(this)
-        .classed('overlap', o);
-    });
-
-    el.classed('overlap', overlap)
-      .classed('touched', true)
-      .selectAll('text')
-      .data(this.labelOf(d).split('\n'))
-      .text((d: string) => d);
-  }
   
-  //////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////
-  createNewStay(): void {
-    // const now = Date.now();
-    // const dt = 1000*60*60*24; // 1 day in milliseconds
-
-    // const newStay: Stay = {
-    //   stay_id: now,
-    //   schedule: { etb: new Date(now-dt), etd: new Date(now+dt) },
-    //   vessel: { vessel_name: 'New Vessel', vessel_id: Date.now(), len: 200 },
-    //   docking: { dir: 1, pos: 800, aft: 0, rear: 0 }
-    // };
-
-    // this.stays.create(newStay);
-    // this.slctd = newStay;
+    this.drawPlot();
   }
 
-  deleteStay(stay: Stay): void {
-    // this.stays.remove(stay);
-    // this.slctd = null;
+  //////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////
+  private drawPlot(xScale: ScaleLinear = this.xScale, yScale: ScaleTime = this.yScale): void {
+    // Update the transform and size for each stay
+    this.plot.selectAll('g.stay')
+        .attr('transform', (d: Stay) => `translate(${xScale(d.docking.pos)},${yScale(d.schedule.etd)})`)
+        .select('rect')
+        .attr('width', (d: Stay) => xScale(d.vessel.lpp) - xScale(0))
+        .attr('height', (d: Stay) => yScale(d.schedule.etb) - yScale(d.schedule.etd));
+
+    // Update the position of the ellipse
+    this.plot.selectAll('g.stay circle.etd')
+        .attr('cx', (d: Stay) => (xScale(d.vessel.lpp) - xScale(0))/2)
+  }
+
+  //////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////
+  private initPier(stays: Stay[], t: Date): void {
+    const current = (v: Stay): boolean => {
+      const { etb, etd } = v.schedule;
+      return (etb <= t && t <= etd);
+    }
+
+    this.pier
+        .selectAll('g.ship')
+        .remove();
+
+    this.plot.selectAll('.stay')
+        .classed('current', (d: Stay) => current(d));
+
+    const dock = this.pier
+        .select('g.dock')
+        .selectAll('g.ship')
+        .data(stays.filter(current))
+        .enter()
+          .append('g')
+          .attr('class', 'ship')
+          .attr('id', (d:Stay) => `ship-${d.stay_id}`)
+          .on('click', clickable)
+          .call(draggable());
+
+    dock.append('path')
+        .attr('class', 'hull')
+        .attr('d', (d: Stay) => makeHull(d.vessel, d.docking.dir))
+        .attr('cursor', 'move');
+
+    dock.append('text')
+        .attr('class', 'label')
+        .text((d: Stay) => d.vessel.vessel_name)
+        .attr('dx', '1.75em')
+        .attr('dy', '1.0em')
+        .attr('fill', 'black');
+
+    this.drawPier();
+  }
+
+  //////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////
+  private drawPier(xScale: ScaleLinear = this.xScale): void {
+    this.pier.selectAll('.dock g.ship')
+        .attr('transform', (d: Stay) => `translate(${xScale(d.docking.pos)},0)`);
+
+    this.pier.selectAll('.dock rect')
+        .attr('width', (d: Stay) => (xScale(d.vessel.lpp) - xScale(0) ) );
+  }
+
+  //////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////
+  private drawLine(yScale: ScaleTime): void {
+    this.plot.selectAll('.cursor')
+        .attr('y1', yScale(this._now))
+        .attr('y2', yScale(this._now));
+  }
+ 
+  //////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////
+  load(): void {
+    console.log('load');
+  }
+
+  drop(): void {
+    console.log('drop');
+  }
+
+  calc(): void {
+    console.log('calc');
+  }
+
+  save(): void {
+    console.log('save');
   }
 }

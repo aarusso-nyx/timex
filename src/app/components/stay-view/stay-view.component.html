@@ -1,98 +1,133 @@
-<!-- schedule.component.html -->
-
-<div>
-    <button (click)="createNewStay()">Create New Stay</button>
-    <button (click)="stays.reset()">Reset Changes</button>
-    <button (click)="stays.commit()">Commit Changes</button>
+<div class="header">
+  <div class="panel">
+    <button (click)="load()">Reload</button>
+    <button (click)="drop()">Restart</button>
+    <button (click)="calc()">Optimize</button>
+    <button (click)="save()">Commit</button>
   </div>
-  <svg width="2000" height="1000">
-    <defs>
-      <style>
-        /* Normal state */
-        .stay > rect {
-          opacity: 0.5;
+  <span class="cursor"> Ocupação do Pier em {{ now | date:'dd/MM/yy HH:mm' }} </span>
+</div>
+<svg id="canvas">
+  <defs>
+    <style>
+.hollow {
+  fill: none;
+}
+      
+.cursor {
+  opacity: 0.5;
+  stroke: red;
+  stroke-width: 20px;
+}
 
-          ry: 5px;
-          rx: 5px;
-        }
-        
-        .stay {
-          fill: darkblue;
-          stroke: black;
-          stroke-width: 1px;
-        }
-        
-        /* Dragging state */
-        .stay.dragging {
-          fill: lightgreen;
-          stroke: darkgreen;
-          stroke-width: 2px;
-        }
-        
-        /* Selected state */
-        .stay.selected {
-          fill: yellow;
-          stroke: orange;
-          stroke-width: 2px;
-        }
-        
-        /* Changed state */
-        .stay.touched {
-          stroke: darkred;
-          stroke-width: 5px;
-        }
-        
-        /* Fixed state */
-        .stay.fixed {
-          fill: gray;
-          stroke: darkgray;
-          stroke-width: 2px;
-          cursor: not-allowed;
-        }
-        
-        /* Overlap state (attention) */
-        .stay.overlap {
-          fill: red;
-          stroke: darkred;
-          stroke-width: 2px;
-        }
-          .axis {
-            font-size: 18px;
-          }
+.hull {
+  fill: green;
+  opacity: 0.5;
+  stroke: black;
+  stroke-width: 5px;
+}
 
-          .etd {
-            stroke: black;
-            stroke-width: 0.5;
-            fill: white;
-            font-family: sans-serif;
-          }
+.boll circle { 
+  fill: none;
+  stroke: black;
+  stroke-width: 5px;
+}
 
-          .sizing {
-            fill: green
-          }
 
-          .label {
-            stroke: black;
-            stroke-width: 0.5;
-            fill: white;
-            font-family: sans-serif;
-          }
+.stay {
+  fill: darkblue;
+  stroke: black;
+  stroke-width: 1px;
+}
 
-          .touched { 
-            stroke: red;
-          }
+.stay.current {
+  fill: darkgreen;
 
-          .y.grid { 
-            stroke: lightgrey;
-            stroke-dasharray: 5,5;
-          }
+}
 
-          .x.grid { 
-            stroke: lightgrey;
-            stroke-dasharray: 1,1;
-            stroke-opacity: 0.5;
-            shape-rendering: crispEdges;
-          }
-      </style>
-    </defs>
-  </svg>
+.stay > rect {
+  opacity: 0.5;
+}
+      
+      
+/* Dragging state */
+.dragging {
+  fill: lightgreen;
+  stroke: darkgreen;
+  stroke-width: 2px;
+}
+      
+/* Selected state */
+.selected {
+  fill: yellow;
+  stroke: orange;
+  stroke-width: 2px;
+}
+      
+/* Changed state */
+.touched {
+  stroke: darkred;
+  stroke-width: 5px;
+}
+      
+/* Fixed state */
+.stay.fixed {
+  fill: gray;
+  stroke: darkgray;
+  stroke-width: 2px;
+  cursor: not-allowed;
+}
+      
+/* Overlap state (attention) */
+.stay.overlap {
+  fill: red;
+  stroke: darkred;
+  stroke-width: 2px;
+}
+
+
+.etd {
+  stroke: black;
+  stroke-width: 0.5;
+  fill: white;
+  font-family: sans-serif;
+}
+
+.sizing {
+  fill: green
+}
+
+.label {
+  font-family: sans-serif;
+}
+
+.stay .label {
+  stroke: black;
+  stroke-width: 0.5;
+  fill: white;
+}
+
+.ship .label {
+  fill: black;
+  stroke: white;
+  stroke-width: 0.5;
+}
+
+.axis {
+  font-size: 18px;
+}
+
+.y.grid { 
+  stroke: lightgrey;
+  stroke-dasharray: 5,5;
+}
+
+.x.grid { 
+  stroke: lightgrey;
+  stroke-dasharray: 1,1;
+  stroke-opacity: 0.5;
+  shape-rendering: crispEdges;
+}
+    </style>
+  </defs>
+</svg>
