@@ -3,11 +3,11 @@ import { CommonModule, DatePipe } from '@angular/common';
 
 import * as d3 from 'd3';
 
-import { Stay, ScaleLinear, ScaleTime } from '../../models/stay';
+import { Stay } from '../../models/stay';
 import { StayService } from '../../services/stay.service';
-import { makeHull, labelOf,
-          draggable, clickable, stretchable, 
-          timeslider } from './stay-view.functions';
+import { draggable, clickable, stretchable, 
+          makeHull, labelOf, retense, deleted,
+          translationOf} from './stay-view.functions';
 
 //////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////
@@ -29,7 +29,7 @@ export class StayViewComponent implements AfterViewInit {
     550, 600, 650, 700, 750, 800, 850, 900, 950
    ];
 
-  
+  private sim: any;
   //////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////
   private xScale: any;
@@ -115,8 +115,9 @@ export class StayViewComponent implements AfterViewInit {
         .domain([ 0, 1000 ])
         .range([ 0, width ]);
 
-    let xScale = this.xScale;
-    let yScale = this.yScale;
+    // Original scales
+    const xScale = this.xScale; 
+    const yScale = this.yScale;
   
     //////////////////////////////////////////////////////////////////////
     // Define clipPath to constrain drawing area
@@ -197,6 +198,7 @@ export class StayViewComponent implements AfterViewInit {
 
     //////////////////////////////////////////////////////////////////////
     // draw horizontal cursor representing this.now;
+    const that = this;
     this.plot
         .append('line')
         .attr('class', 'cursor')
@@ -204,30 +206,36 @@ export class StayViewComponent implements AfterViewInit {
         .attr('x2', width)
         .attr('y1', this.yScale(this._now))
         .attr('y2', this.yScale(this._now))
-        .call(timeslider(this, yScale));
+        .call(d3.drag()
+                .on('drag', function(this: Element, event: any): void {
+                    d3.select(this)
+                        .attr('y1', event.y)
+                        .attr('y2', event.y);
 
+                    that.now = yScale.invert(event.y);
+                }));
 
     //////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////
     // Rescale axes
-    const rescaleYAxis = (yScale: any) => {
-      yAxis[0].call(d3.axisLeft(yScale).ticks(12));
-      yAxis[1].call(d3.axisLeft(yScale).ticks(d3.timeHour.every(6))
+    const rescaleYAxis = () => {
+      yAxis[0].call(d3.axisLeft(this.yScale).ticks(12));
+      yAxis[1].call(d3.axisLeft(this.yScale).ticks(d3.timeHour.every(6))
           .tickSize(-width)
           .tickFormat(() => ''));
     }
 
-    const rescaleXAxis = (xScale: any) => {
-      xAxis[0].call(d3.axisTop(xScale).ticks(20));
-      xAxis[1].call(d3.axisBottom(xScale).ticks(20));
+    const rescaleXAxis = () => {
+      xAxis[0].call(d3.axisTop(this.xScale).ticks(20));
+      xAxis[1].call(d3.axisBottom(this.xScale).ticks(20));
 
       this.pier.selectAll('.boll circle')
-          .attr('cx', (d: number) => xScale(d));
+          .attr('cx', (d: number) => this.xScale(d));
     }
 
     // Scale axes
-    rescaleYAxis(this.yScale); 
-    rescaleXAxis(this.xScale);
+    rescaleYAxis(); 
+    rescaleXAxis();
 
     // Define zoom behavior
     const xZoom = d3.zoom()
@@ -236,16 +244,16 @@ export class StayViewComponent implements AfterViewInit {
         .on('zoom', (event) => {
             const t = event.transform;
             if ( event.sourceEvent?.shiftKey ) {
-              xScale = t.rescaleX(this.xScale);
-              rescaleXAxis(xScale);
-              this.drawPier(xScale);
+              this.xScale = t.rescaleX(xScale);
+              rescaleXAxis();
+              this.drawPier();
             } else {
-              yScale = t.rescaleY(this.yScale);
-              rescaleYAxis(yScale);
-              this.drawLine(yScale);  
+              this.yScale = t.rescaleY(yScale);
+              rescaleYAxis();
+              this.drawLine();  
             }
             
-            this.drawPlot(xScale, yScale);           
+            this.drawPlot();           
         });
 
     svg.call(xZoom.bind(this));
@@ -253,7 +261,8 @@ export class StayViewComponent implements AfterViewInit {
     d3.select(window)
       .on('keydown', (event: KeyboardEvent) => {
         if (event.key === 'Delete' || event.key === 'Backspace') {
-          this.plot.selectAll('.selected').classed('selected', false).remove();
+          deleted(this.plot);
+          deleted(this.pier);
         }
       });
   }
@@ -270,10 +279,10 @@ export class StayViewComponent implements AfterViewInit {
         .data(stays)
         .enter()
           .append('g')
-          .classed('stay', true)
+          .attr('class', 'stay')
           .attr('id', (d:Stay) => `stay-${d.stay_id}`)
           .on('click', clickable)
-          .call(draggable());
+          .call(draggable(this.xScale, this.yScale));
 
     plot.append('rect')
         .attr('cursor', 'move');
@@ -282,7 +291,8 @@ export class StayViewComponent implements AfterViewInit {
         .attr('class', 'etd')
         .attr('r', 10)
         .attr('cursor', 'ns-resize')
-        .call(stretchable());
+        .call(stretchable(this.xScale, this.yScale))
+        .on('drag', null);
       
     plot.append('g')
         .attr('class', 'label')
@@ -300,7 +310,10 @@ export class StayViewComponent implements AfterViewInit {
 
   //////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////
-  private drawPlot(xScale: ScaleLinear = this.xScale, yScale: ScaleTime = this.yScale): void {
+  private drawPlot(): void {
+    const xScale = this.xScale;
+    const yScale = this.yScale;
+
     // Update the transform and size for each stay
     this.plot.selectAll('g.stay')
         .attr('transform', (d: Stay) => `translate(${xScale(d.docking.pos)},${yScale(d.schedule.etd)})`)
@@ -321,12 +334,11 @@ export class StayViewComponent implements AfterViewInit {
       return (etb <= t && t <= etd);
     }
 
+    retense(this.plot.selectAll('.stay'), t);
+
     this.pier
         .selectAll('g.ship')
         .remove();
-
-    this.plot.selectAll('.stay')
-        .classed('current', (d: Stay) => current(d));
 
     const dock = this.pier
         .select('g.dock')
@@ -337,7 +349,7 @@ export class StayViewComponent implements AfterViewInit {
           .attr('class', 'ship')
           .attr('id', (d:Stay) => `ship-${d.stay_id}`)
           .on('click', clickable)
-          .call(draggable());
+          .call(draggable(this.xScale, this.yScale));
 
     dock.append('path')
         .attr('class', 'hull')
@@ -347,8 +359,8 @@ export class StayViewComponent implements AfterViewInit {
     dock.append('text')
         .attr('class', 'label')
         .text((d: Stay) => d.vessel.vessel_name)
-        .attr('dx', '1.75em')
-        .attr('dy', '1.0em')
+        .attr('dx', (d: Stay) => (0.5-0.1*d.docking.dir)*(this.xScale(d.vessel.lpp) - this.xScale(0) ))
+        .attr('dy', (d: Stay) => 0.5*(this.xScale(d.vessel.beam) - this.xScale(0) ))
         .attr('fill', 'black');
 
     this.drawPier();
@@ -356,20 +368,20 @@ export class StayViewComponent implements AfterViewInit {
 
   //////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////
-  private drawPier(xScale: ScaleLinear = this.xScale): void {
+  private drawPier(): void {
     this.pier.selectAll('.dock g.ship')
-        .attr('transform', (d: Stay) => `translate(${xScale(d.docking.pos)},0)`);
+        .attr('transform', (d: Stay) => `translate(${this.xScale(d.docking.pos)},0)`);
 
     this.pier.selectAll('.dock rect')
-        .attr('width', (d: Stay) => (xScale(d.vessel.lpp) - xScale(0) ) );
+        .attr('width', (d: Stay) => (this.xScale(d.vessel.lpp) - this.xScale(0) ) );
   }
 
   //////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////
-  private drawLine(yScale: ScaleTime): void {
+  private drawLine(): void {
     this.plot.selectAll('.cursor')
-        .attr('y1', yScale(this._now))
-        .attr('y2', yScale(this._now));
+        .attr('y1', this.yScale(this._now))
+        .attr('y2', this.yScale(this._now));
   }
  
   //////////////////////////////////////////////////////////////////
@@ -380,13 +392,76 @@ export class StayViewComponent implements AfterViewInit {
 
   drop(): void {
     console.log('drop');
-  }
-
-  calc(): void {
-    console.log('calc');
+    this.sim.stop();
   }
 
   save(): void {
     console.log('save');
   }
+  
+  calc(): void {
+    console.log('calc');
+
+    interface CustomNode extends d3.SimulationNodeDatum {
+      x: number; // Center x
+      y: number; // Center y
+      width: number; // Rectangle width
+      height: number; // Rectangle height
+    }
+
+    // const data = d3.selectAll('g.stay');
+    const width = this.xScale.range()[1] - this.xScale.range()[0];
+    const height = this.yScale.range()[0] - this.yScale.range()[1];
+
+
+    const nodes: CustomNode[] = d3.selectAll('g.stay').nodes()
+    .filter(g => !!g)
+    .map(g => {
+      const el = d3.select(g).select('rect');
+      const [x, y] = translationOf(g as Element);///
+      return { x, y,
+        width: parseFloat(el.attr('width')),
+        height: parseFloat(el.attr('height')),
+      };
+    });
+    
+    // Create the force simulation
+    this.sim = d3.forceSimulation( nodes )
+    // .force('collide', d3.forceCollide<CustomNode>().radius(d => {
+    //   return Math.max(d.width, d.height)/1.8;
+    // }).strength(5)) // Force to prevent circles overlapping
+
+    // .force('charge', d3.forceManyBody<CustomNode>().strength(3)) // Force to prevent circles overlapping
+    .force('center', d3.forceCenter<CustomNode>(width / 2, height / 2).strength(1))
+    // .alphaDecay(0.01)
+    .alpha(0.05)
+    // Force towards the center
+    // .force('boundary', d3.forceX<CustomNode>(d => { 
+    //     nodes.forEach(d => {
+    //       // Left boundary
+    //       if (d.x - d.width / 2 < 0) d.x = d.width / 2;
+    //       // Right boundary
+    //       if (d.x + d.width / 2 > width) d.x = width - d.width / 2;
+    //       // Top boundary
+    //       if (d.y - d.height / 2 < 0) d.y = d.height / 2;
+    //       // Bottom boundary
+    //       if (d.y + d.height / 2 > height) d.y = height - d.height / 2;
+    //     });
+    // }))
+        // .force('x', d3.forceX<CustomNode>(width / 2).strength(0.51)) // Force towards the center horizontally
+        // .force('y', d3.forceY<CustomNode>(height / 2).strength(0.51)) // Force towards the center vertically
+        // .force('charge', d3.forceManyBody<CustomNode>().strength(-10)) // Force to prevent circles overlapping
+        // .force('boundary', d3.forceX<CustomNode>(d => {
+        //   return d.width / 2;
+        // })
+.on('tick', function ticked() {
+  nodes.forEach((g, i, els) => {
+    d3.selectAll('g.stay') 
+      .data(nodes)
+      .attr('transform', d => `translate(${d.x - d.width / 2},${d.y - d.height / 2})`);
+    })
+});
+
+  }
+
 }

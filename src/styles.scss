@@ -1,1 +1,136 @@
 /* You can add global styles to this file, and also import other style files */
+:root {
+    --stay-color: #00008b80;
+    --ship-color: #00640080;
+    --line-color: #ff000080;
+    --selected-color: #ff000080;
+    --dragging-color: #00ff0080;
+    --changed-color: #ff000080;
+    --overlapped-color: #ff000080;
+    --overlapping-color: #ff7fff0080;
+}
+
+text.label {
+    font-family: sans-serif;
+    stroke: none;
+}
+
+.deleted {
+    display: none;
+}
+
+.hollow {
+    fill: none;
+}
+
+.boll circle {
+    fill: none;
+    stroke: black;
+    stroke-width: 5px;
+}
+
+.cursor {
+    opacity: 0.5;
+    stroke: var(--line-color);
+    stroke-width: 20px;
+}
+
+
+.stay {
+    fill: var(--stay-color);
+
+    circle {
+        opacity: 1;
+        // fill: var(--stay-color);
+        // fill: none;
+        // stroke:gray;
+        stroke-width: 5px;
+    }
+
+    text {
+        // fill: darkblue;
+        // stroke: darkblue;
+        // font-weight: bold;
+    }
+}
+
+.ship {
+    // fill: var(--ship-color);
+    // stroke: black;
+    // stroke-width: 2px;
+
+    path {
+        fill: var(--ship-color);
+        stroke: darkgreen;
+        stroke-width: 5px;
+    }
+
+    text {
+        text-anchor: middle;
+        alignment-baseline: middle;
+    }
+}
+
+.past {
+    filter: url(#tint);
+}
+
+.future {
+    filter: url(#pale);
+}
+
+.current > rect {
+    fill: var(--ship-color);
+    stroke: darkgreen;
+    stroke-width: 5px;
+}
+
+
+
+
+
+/* Dragging state */
+.dragging {
+    // fill: lightgreen;
+    // stroke: darkgreen;
+    stroke-width: 3px;
+    stroke-dasharray: 5, 5;
+}
+
+/* Selected state */
+.selected {
+    // fill: yellow;
+    stroke: orange;
+    stroke-width: 5px;
+}
+
+/* Changed state */
+.touched {
+    stroke: darkred;
+    stroke-width: 5px;
+}
+
+/* Overlapping state */
+.overlap {
+    stroke: darkred;
+    fill: coral !important;
+}
+
+.overlapping {
+    filter: saturate(200%);
+}
+
+.overlapped {
+    filter: brightness(50%);
+}
+
+
+/* Axis */
+.axis {
+    font-size: 18px;
+}
+
+.y.grid {
+    stroke: lightgrey;
+    stroke-dasharray: 5, 5;
+}

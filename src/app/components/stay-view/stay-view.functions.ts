@@ -1,6 +1,10 @@
 import * as d3 from 'd3';
 
-import { Vessel, Stay, ScaleLinear, ScaleTime } from '../../models/stay';
+import { Vessel, Stay } from '../../models/stay';
+
+type ScaleLinear = d3.ScaleLinear<number, number>;
+type ScaleTime = d3.ScaleTime<number, number>;
+type Selection = d3.Selection<SVGGElement, Stay, SVGSVGElement, unknown>;
 
 //////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////
@@ -36,21 +40,40 @@ export const makeHull = (v: Vessel, d: number=1): string => {
     const l = 2*v.lpp;
     const b = 2*v.beam;
   
-    return (d === 1)? `M 0,0 V ${b} H ${0.8*l} L ${l},${b/2} L ${0.8*l},0 Z`
-                    : `M ${l},0 V ${b} H ${0.2*l} L 0,${b/2} L ${0.2*l},0 Z`;
+    return (d === 1)? `M 0,0 V ${b} H ${0.8*l} L ${0.95*l},${b/2} L ${0.8*l},0 Z`
+                    : `M ${0.95*l},0 V ${b} H ${0.2*l} L 0,${b/2} L ${0.2*l},0 Z`;
 }
 
 //////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////
+export const retense = (el: Selection, t: Date ) => {
+    el.classed('past', (d: Stay) => d.schedule.etd < t)
+        .classed('future', (d: Stay) => d.schedule.etb > t)
+        .classed('current', (d: Stay) => d.schedule.etb <= t && t <= d.schedule.etd)
+        .classed('selected', false);
+}
+
+export const deleted = (el: Selection ) => {
+    el.selectAll('.selected')  
+        .classed('selected', false)
+        .classed('touched', true)
+        .classed('deleted', true); 
+}
+
 export const clickable = (event: PointerEvent) => { 
     const elem = event.target as Element;
     const e = d3.select(elem.parentElement);
     e.classed('selected', !e.classed('selected'));
+
+    const [item, id] = e.attr('id').split('-');
+    const twin = d3.select(`#${(item === 'ship') ? `stay-${id}` : `ship-${id}`}`);
+    twin.classed('selected', e.classed('selected'));
 }
+
 
 //////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////
-export const draggable = () => {
+export const draggable = (xScale: ScaleLinear, yScale: ScaleTime) => {
     let dx: number, dy: number;
 
     return d3.drag()
@@ -70,58 +93,53 @@ export const draggable = () => {
                 grab.attr('transform', `translate(${dx},${dy})`);
             }
             
-            update(mirror(grab, dx))  
+            verify(mirror(grab, dx));  
         })
         .on('end', function(this: Element): void {
             d3.select(this).classed('dragging', false);
+            update(d3.select(this), xScale, yScale);
         });
 }
 
 //////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////
-export const stretchable = () => {
-    let dy: number, h0: number;
+export const stretchable = (xScale: ScaleLinear, yScale: ScaleTime) => {
+    let dot: any, dad: any, box: any;
+    
+    let h0: number;
+    let x0: number, y0: number;
+    let xt: number, yt: number;
 
-    const boxOf = (el: any): any => d3.select(el.node().parentNode).select('rect');
     const parent = (el: any): any => d3.select(el.node().parentNode);
+    const boxOf = (el: any): any => parent(el).select('rect');
 
     return d3.drag()
         .on('start', function(this: Element, event: any): void {
-            const dot = d3.select(this).classed('sizing', true).classed('touched', true);
-            const box = boxOf(dot);
-          
-            dy = +box.attr('y');
+            dot = d3.select(this);
+            dad = parent(dot).classed('dragging', true);
+            box = boxOf(dot);
+            
+            [xt, yt] = translationOf(dad.node());
+            [x0, y0] = d3.pointer(event, this.parentNode?.parentNode);
+
             h0 = +box.attr('height');
         })
         .on('drag', function(this: Element, event: any): void {
-            const dot = d3.select(this);
-            const box = boxOf(dot);
+            const [x, y] = d3.pointer(event, this.parentNode?.parentNode);
+          
+            if (h0-(y-y0) < 0) return;
 
-            dy += event.dy;
+            dad.attr('transform', `translate(${xt},${yt+(y-y0)})`);
+            box.attr('height', Math.max(h0-(y-y0), 0));
 
-            dot.attr('cy', dy);
-            box.attr('y', dy);
-            box.attr('height', Math.max(h0-dy,0));
-
-            update(parent(box));
+            verify(dad);
         })
         .on('end', function(this: Element): void {
-            d3.select(this).classed('sizing', false);
+            dad.classed('dragging', false);
+            update(dad, xScale, yScale);
         });
 } 
 
-//////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////
-export const timeslider = (that: any, yScale: ScaleTime) => {
-    return d3.drag()
-        .on('drag', function(this: Element, event: any): void {
-            d3.select(this)
-                .attr('y1', event.y)
-                .attr('y2', event.y);
-
-        that.now = yScale.invert(event.y);
-    });
-}
 
 //////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////
@@ -143,7 +161,9 @@ const mirror = (el: any, x: number ): any => {
 
 //////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////
-const update = (elem: any): void => {
+const verify = (elem: Selection): void => {
+    if ( !elem ) return;
+
     const overlaps = (a: any, b: any): boolean => {
         const [ax, ay] = translationOf(a);
         const [bx, by] = translationOf(b);
@@ -156,10 +176,6 @@ const update = (elem: any): void => {
         return (ax < bx + bw && ax + aw > bx &&
                 ay < by + bh && ay + ah > by);
     }
-
-    const d = elem.datum() as Stay;
-    // elem.classed('touched', true);
-    // elem.datum(d);
     
     const id = elem.attr('id').split('-')[1];
     const twin = d3.select(`#ship-${id}`);
@@ -176,53 +192,36 @@ const update = (elem: any): void => {
             d3.select(this).classed('overlap', o);
         });
 
-    // const yNow = +d3.select('line.cursor').attr('y1');
-    // const y = translationOf(elem.node())[1];
-    // const h = +elem.select('rect').attr('height');
-    // console.log(yNow, y, h);
 
-    elem.classed('overlap', overlap)
-        // .classed('current', (y <= yNow && yNow <= y+h))
+    elem.classed('overlap overlapping', overlap)
         .classed('touched', true)
-        // .selectAll('text')
-        // .data(labelOf(d).split('\n'))
-        // .text((d: string) => d);
+        .selectAll('text')
+        .data(labelOf(elem.datum()).split('\n'))
+        .text((d: string) => d);
 
-    twin.classed('overlap', overlap)
+    twin.classed('overlap overlapped', overlap)
         .classed('touched', true);
 }
 
 
-  //////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////
-//   const process = (el: any, dx: number, dy: number, xScale: ScaleLinear, yScale: ScaleTime ): void => {
-      
-
-//     const d = el.datum();
-//     const w = +el.select('rect').attr('width');
+//////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////
+const update = (elem: any, xScale: ScaleLinear, yScale: ScaleTime): void => {
+    const d = elem.datum() as Stay;
+    const [x, y] = translationOf(elem.node());
     
-//     d.schedule.etb = new Date(xScale.invert(dx));
-//     d.schedule.etd = new Date(xScale.invert(dx+w));
-//     d.docking.pos = yScale.invert(dy);
-//     d.changed = true;
-//     el.datum(d);
+    // Updating Datum
+    if ( elem.classed('stay') ) {
+        const h = +elem.select('rect').attr('height');
+        d.schedule.etd = new Date(yScale.invert(y));
+        d.schedule.etb = new Date(yScale.invert(y+h));
+    }
 
-//     let overlap = false;
-//     // this.plot
+    d.docking.pos  = xScale.invert(x);
+    elem.datum(d);
     
-//     // const fleet 
-    
-//     d3
-//         .selectAll('g.stay')
-//         // .filter(function(e: Element) {
-//         //   return e !== el.node();
-//         // })
-//         // .each(function(e: Element) {
-//         //   const o = overlaps(e, el.node());
-//         //   overlap ||= o;
+    // Updating the visual representation
+    const yt = +d3.select('line.cursor').attr('y1');
+    retense(elem, new Date(yScale.invert(yt)));
+} 
 
-//         //   d3.select(e)
-//         //     .classed('overlap', o);
-//         // });
-//   }
-  

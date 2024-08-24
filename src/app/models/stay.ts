@@ -1,11 +1,3 @@
-// stays.interfaces.ts
-import * as d3 from 'd3';
-
-export type ScaleLinear = d3.ScaleLinear<number, number>;
-export type ScaleTime = d3.ScaleTime<number, number>;
-
-////////////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////
 export interface Schedule {
     etb: Date;            // Estimated Time of Boarding
     etd: Date;            // Estimated Time of Departure
