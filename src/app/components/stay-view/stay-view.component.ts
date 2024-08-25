@@ -7,7 +7,8 @@ import { Stay } from '../../models/stay';
 import { StayService } from '../../services/stay.service';
 import { draggable, clickable, stretchable, 
           makeHull, labelOf, retense, deleted,
-          translationOf} from './stay-view.functions';
+          translationOf,
+          recheck} from './stay-view.functions';
 
 //////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////
@@ -39,7 +40,7 @@ export class StayViewComponent implements AfterViewInit {
   private pier: any;
 
   ////////////////////////////////////
-  // Cursor
+  // timeline
   private _now: Date = new Date();
   public get now(): Date {
     return this._now;
@@ -197,11 +198,11 @@ export class StayViewComponent implements AfterViewInit {
           .attr('r', 5);
 
     //////////////////////////////////////////////////////////////////////
-    // draw horizontal cursor representing this.now;
+    // draw horizontal line representing this.now;
     const that = this;
     this.plot
         .append('line')
-        .attr('class', 'cursor')
+        .attr('class', 'timeline')
         .attr('x1', 0)
         .attr('x2', width)
         .attr('y1', this.yScale(this._now))
@@ -264,6 +265,15 @@ export class StayViewComponent implements AfterViewInit {
           deleted(this.plot);
           deleted(this.pier);
         }
+
+        if (event.key === 'Enter') {
+          this.calc();
+        }
+
+        if (event.key === 'Escape') {
+          d3.selectAll('g.stay, g.ship')
+            .classed('selected', false);
+        }
       });
   }
 
@@ -276,54 +286,49 @@ export class StayViewComponent implements AfterViewInit {
     
     const plot = this.plot
         .selectAll('g.stay')
-        .data(stays)
+        .data(stays as Stay[])
         .enter()
           .append('g')
           .attr('class', 'stay')
           .attr('id', (d:Stay) => `stay-${d.stay_id}`)
           .on('click', clickable)
           .call(draggable(this.xScale, this.yScale));
-
+          
     plot.append('rect')
-        .attr('cursor', 'move');
 
     plot.append('circle')
         .attr('class', 'etd')
         .attr('r', 10)
-        .attr('cursor', 'ns-resize')
-        .call(stretchable(this.xScale, this.yScale))
-        .on('drag', null);
+        .call(stretchable(this.xScale, this.yScale));
       
     plot.append('g')
         .attr('class', 'label')
-        .attr('cursor', 'click')
         .selectAll('text')
         .data((d:Stay) => labelOf(d).split('\n'))
         .enter()
         .append('text')
           .text((d: string) => d)
           .attr('dx', '0.5em')
-          .attr('dy', (d: string, i: number) => `${1.5*i+1.3}em`);
-  
+          .attr('dy', (d: string, i: number) => `${1.5*i+1.25}em`);
+
     this.drawPlot();
+
+    recheck();
   }
 
   //////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////
   private drawPlot(): void {
-    const xScale = this.xScale;
-    const yScale = this.yScale;
-
-    // Update the transform and size for each stay
-    this.plot.selectAll('g.stay')
-        .attr('transform', (d: Stay) => `translate(${xScale(d.docking.pos)},${yScale(d.schedule.etd)})`)
+    this.plot
+        .selectAll('g.stay')
+        .attr('transform', (d: Stay) => `translate(${this.xScale(d.docking.pos)},${this.yScale(d.schedule.etd)})`)
         .select('rect')
-        .attr('width', (d: Stay) => xScale(d.vessel.lpp) - xScale(0))
-        .attr('height', (d: Stay) => yScale(d.schedule.etb) - yScale(d.schedule.etd));
+          .attr('width', (d: Stay) => this.xScale(d.vessel.lpp) - this.xScale(0))
+          .attr('height', (d: Stay) => this.yScale(d.schedule.etb) - this.yScale(d.schedule.etd));
 
-    // Update the position of the ellipse
-    this.plot.selectAll('g.stay circle.etd')
-        .attr('cx', (d: Stay) => (xScale(d.vessel.lpp) - xScale(0))/2)
+    this.plot
+        .selectAll('g.stay circle.etd')
+        .attr('cx', (d: Stay) => (this.xScale(d.vessel.lpp) - this.xScale(0))/2)
   }
 
   //////////////////////////////////////////////////////////////////
@@ -343,7 +348,7 @@ export class StayViewComponent implements AfterViewInit {
     const dock = this.pier
         .select('g.dock')
         .selectAll('g.ship')
-        .data(stays.filter(current))
+        .data(stays.filter(current) as Stay[])
         .enter()
           .append('g')
           .attr('class', 'ship')
@@ -353,15 +358,13 @@ export class StayViewComponent implements AfterViewInit {
 
     dock.append('path')
         .attr('class', 'hull')
-        .attr('d', (d: Stay) => makeHull(d.vessel, d.docking.dir))
-        .attr('cursor', 'move');
+        .attr('d', (d: Stay) => makeHull(d.vessel, d.docking.dir));
 
     dock.append('text')
         .attr('class', 'label')
         .text((d: Stay) => d.vessel.vessel_name)
         .attr('dx', (d: Stay) => (0.5-0.1*d.docking.dir)*(this.xScale(d.vessel.lpp) - this.xScale(0) ))
-        .attr('dy', (d: Stay) => 0.5*(this.xScale(d.vessel.beam) - this.xScale(0) ))
-        .attr('fill', 'black');
+        .attr('dy', (d: Stay) => 0.5*(this.xScale(d.vessel.beam) - this.xScale(0) ));
 
     this.drawPier();
   }
@@ -379,7 +382,7 @@ export class StayViewComponent implements AfterViewInit {
   //////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////
   private drawLine(): void {
-    this.plot.selectAll('.cursor')
+    this.plot.selectAll('.timeline')
         .attr('y1', this.yScale(this._now))
         .attr('y2', this.yScale(this._now));
   }
@@ -388,6 +391,7 @@ export class StayViewComponent implements AfterViewInit {
   //////////////////////////////////////////////////////////////////
   load(): void {
     console.log('load');
+    alert('load');
   }
 
   drop(): void {
@@ -396,72 +400,54 @@ export class StayViewComponent implements AfterViewInit {
   }
 
   save(): void {
-    console.log('save');
+    alert('save');
+    this.plot.selectAll('.touched').classed('touched', false);
   }
   
-  calc(): void {
-    console.log('calc');
-
-    interface CustomNode extends d3.SimulationNodeDatum {
-      x: number; // Center x
-      y: number; // Center y
-      width: number; // Rectangle width
-      height: number; // Rectangle height
-    }
-
-    // const data = d3.selectAll('g.stay');
-    const width = this.xScale.range()[1] - this.xScale.range()[0];
-    const height = this.yScale.range()[0] - this.yScale.range()[1];
-
-
-    const nodes: CustomNode[] = d3.selectAll('g.stay').nodes()
-    .filter(g => !!g)
-    .map(g => {
-      const el = d3.select(g).select('rect');
-      const [x, y] = translationOf(g as Element);///
-      return { x, y,
-        width: parseFloat(el.attr('width')),
-        height: parseFloat(el.attr('height')),
-      };
-    });
-    
-    // Create the force simulation
-    this.sim = d3.forceSimulation( nodes )
-    // .force('collide', d3.forceCollide<CustomNode>().radius(d => {
-    //   return Math.max(d.width, d.height)/1.8;
-    // }).strength(5)) // Force to prevent circles overlapping
-
-    // .force('charge', d3.forceManyBody<CustomNode>().strength(3)) // Force to prevent circles overlapping
-    .force('center', d3.forceCenter<CustomNode>(width / 2, height / 2).strength(1))
-    // .alphaDecay(0.01)
-    .alpha(0.05)
-    // Force towards the center
-    // .force('boundary', d3.forceX<CustomNode>(d => { 
-    //     nodes.forEach(d => {
-    //       // Left boundary
-    //       if (d.x - d.width / 2 < 0) d.x = d.width / 2;
-    //       // Right boundary
-    //       if (d.x + d.width / 2 > width) d.x = width - d.width / 2;
-    //       // Top boundary
-    //       if (d.y - d.height / 2 < 0) d.y = d.height / 2;
-    //       // Bottom boundary
-    //       if (d.y + d.height / 2 > height) d.y = height - d.height / 2;
-    //     });
-    // }))
-        // .force('x', d3.forceX<CustomNode>(width / 2).strength(0.51)) // Force towards the center horizontally
-        // .force('y', d3.forceY<CustomNode>(height / 2).strength(0.51)) // Force towards the center vertically
-        // .force('charge', d3.forceManyBody<CustomNode>().strength(-10)) // Force to prevent circles overlapping
-        // .force('boundary', d3.forceX<CustomNode>(d => {
-        //   return d.width / 2;
-        // })
-.on('tick', function ticked() {
-  nodes.forEach((g, i, els) => {
-    d3.selectAll('g.stay') 
-      .data(nodes)
-      .attr('transform', d => `translate(${d.x - d.width / 2},${d.y - d.height / 2})`);
-    })
-});
-
+  check(): void {
+    recheck();
   }
 
+  calc(): void {
+    const W = this.xScale.range();
+    const H = this.yScale.range().reverse();
+
+    const stays = d3.selectAll('g.stay').data() as Stay[];
+    
+    this.sim = d3.forceSimulation(stays as any)
+        // .force('x', d3.forceX( (d: any) => this.xScale(d.docking.pos)  ).strength(0.1))
+        // .force('y', d3.forceY( (d: any) => this.yScale(d.schedule.etd) ).strength(0.5))
+        .force('center', d3.forceCenter(W[1]/2, H[1]/2).strength(0.1))
+        .force('charge', d3.forceManyBody().strength(10))
+        .force('collide', d3.forceCollide(9)
+      //   .radius(
+      //     (d: any) => {
+      //     const w = this.xScale(d.vessel.lpp) - this.xScale(0);
+      //     const h = this.yScale(d.schedule.etb) - this.yScale(d.schedule.etd);
+      //     return Math.hypot(w,h)/16;
+      //   }
+      // )
+      .strength(10))
+        // .force('boundary', (alpha: number) => {
+        //   stays.forEach((d: any) => {
+        //     const x = this.xScale(d.docking.pos);
+        //     const y = this.yScale(d.schedule.etd);
+        //     const w = this.xScale(d.vessel.lpp) - this.xScale(0);
+        //     const h = this.yScale(d.schedule.etb) - this.yScale(d.schedule.etd);
+
+        //     if ( x < W[0] ) d.x = W[0];
+        //     if ( x + w > W[1] ) d.x = W[1] - w;
+
+        //     if ( y < H[0] ) d.y = H[0];
+        //     if ( y + h > H[1] ) d.y = H[1] - h;
+
+        //   });
+        // })
+        .on('tick', () => {
+          this.plot.selectAll('.stay')
+              .attr('transform', (d: any) => `translate(${d.x},${d.y})`);
+        })
+        .alpha(0.01)
+        .restart();
+  }
 }

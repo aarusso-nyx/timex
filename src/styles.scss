@@ -1,20 +1,59 @@
 /* You can add global styles to this file, and also import other style files */
 :root {
-    --stay-color: #00008b80;
-    --ship-color: #00640080;
-    --line-color: #ff000080;
-    --selected-color: #ff000080;
-    --dragging-color: #00ff0080;
-    --changed-color: #ff000080;
-    --overlapped-color: #ff000080;
-    --overlapping-color: #ff7fff0080;
+    --line-color: firebrick;
+    
+    --ship-color: darkgreen;
+    --ship-color-alpha: #00640080;
+    --ship-color-text: darkslategray;
+
+
+    --stay-color: navy;
+    --stay-color-alpha: #00008080;
+    --stay-color-text: seashell;
+    --stay-color-changed-text: yellow;
+
+    --selected-color:maroon ;
+    --selected-color-alpha: #80000080;
+    --selected-color-text:maroon;
+    
+    
+    --border-width: 5px;
 }
 
-text.label {
+/* ************************** */
+/* ************************** */
+text  {
     font-family: sans-serif;
     stroke: none;
+    fill: black;
 }
 
+
+.timeline {
+    opacity: 0.5;
+    stroke: var(--line-color);
+    stroke-width: 20px;
+}
+
+
+.boll circle {
+    fill: none;
+    stroke: black;
+    stroke-width: var(--border-width);
+}
+
+/* Axis */
+.axis {
+    font-size: 18px;
+}
+
+.y.grid {
+    opacity: 0.5;
+    stroke: lightgrey;
+    stroke-dasharray: 5, 5;
+}
+
+/* State */
 .deleted {
     display: none;
 }
@@ -23,114 +62,106 @@ text.label {
     fill: none;
 }
 
-.boll circle {
-    fill: none;
-    stroke: black;
-    stroke-width: 5px;
-}
-
-.cursor {
-    opacity: 0.5;
-    stroke: var(--line-color);
-    stroke-width: 20px;
-}
-
-
-.stay {
-    fill: var(--stay-color);
-
-    circle {
-        opacity: 1;
-        // fill: var(--stay-color);
-        // fill: none;
-        // stroke:gray;
-        stroke-width: 5px;
-    }
-
-    text {
-        // fill: darkblue;
-        // stroke: darkblue;
-        // font-weight: bold;
+/* Dragging state */
+.dragging  {
+    rect, path {
+        stroke-width: var(--border-width);
+        stroke-dasharray: calc(var(--border-width) * 2) calc(var(--border-width) * 2);
+        cursor: move;
     }
 }
 
+.stretching {
+    rect {
+        cursor: ns-resize;
+    }
+}
+
+/* Elements */
 .ship {
-    // fill: var(--ship-color);
-    // stroke: black;
-    // stroke-width: 2px;
-
     path {
-        fill: var(--ship-color);
-        stroke: darkgreen;
-        stroke-width: 5px;
+        fill: var(--ship-color-alpha);
+        stroke: var(--ship-color);
+        stroke-width: var(--border-width);
     }
 
     text {
+        fill: var(--ship-color-text);
+        font-size: larger;
         text-anchor: middle;
         alignment-baseline: middle;
+        filter: drop-shadow(0px 0px 10px #000000);
     }
 }
 
-.past {
-    filter: url(#tint);
+.ship.overlap {
+    path {
+        stroke: darkred;
+    }
 }
 
-.future {
-    filter: url(#pale);
-}
+.stay { 
+    rect {
+        fill: var(--stay-color-alpha);
+        stroke: var(--stay-color);
+        stroke-width: var(--border-width);
+    }
 
-.current > rect {
-    fill: var(--ship-color);
-    stroke: darkgreen;
-    stroke-width: 5px;
-}
+    circle {
+        fill: var(--stay-color);
+        cursor: ns-resize;
+    }
 
-
-
-
-
-/* Dragging state */
-.dragging {
-    // fill: lightgreen;
-    // stroke: darkgreen;
-    stroke-width: 3px;
-    stroke-dasharray: 5, 5;
+    text {
+        fill: var(--stay-color-text);
+        filter: drop-shadow(3px 3px 10px #000000);
+    }
 }
 
 /* Selected state */
-.selected {
-    // fill: yellow;
-    stroke: orange;
-    stroke-width: 5px;
+.stay.selected {
+    rect {
+        fill: var(--selected-color-alpha);
+        stroke: var(--selected-color);
+    }
+
+    circle {
+        fill: var(--selected-color);
+    }
+
+    text {
+        fill: var(--selected-color-text);
+    }
 }
 
-/* Changed state */
-.touched {
-    stroke: darkred;
-    stroke-width: 5px;
-}
-
+.stay.touched {
+    .label text {
+        fill: var(--stay-color-changed-text);
+        font-weight: bold;
+    }
+} 
 /* Overlapping state */
-.overlap {
-    stroke: darkred;
-    fill: coral !important;
-}
-
-.overlapping {
-    filter: saturate(200%);
-}
-
-.overlapped {
-    filter: brightness(50%);
+.stay.overlap {
+    rect, circle {
+        stroke: darkred !important;
+        fill: coral !important;
+    }
 }
 
 
-/* Axis */
-.axis {
-    font-size: 18px;
+/* Timing State */
+.past rect,
+.past circle {
+    filter: brightness(0.5);
+    filter: saturate(0.5);
 }
 
-.y.grid {
-    stroke: lightgrey;
-    stroke-dasharray: 5, 5;
+.future rect {
+    filter: brightness(2.5);
+    filter: saturate(2.5);
 }
+
+
+
+
+

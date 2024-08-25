@@ -51,7 +51,7 @@ export class StayService {
       const dir = Math.random() > 0.5 ? 1 : -1;
       
       const etb = randomDate(new Date(now - dt), new Date(now + dt));
-      const etd = randomDate(etb, new Date(now + dt));
+      const etd = randomDate(new Date(etb.getTime() + 86400000) , new Date(now + dt));
       
       const schedule = { etb, etd };
       const docking = { dir, pos: stern, aft: 10, rear: 10 };
